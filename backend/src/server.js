@@ -23,6 +23,33 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+let isInitialized = false;
+let initPromise = null;
+
+const ensureInitialized = async () => {
+  if (!isInitialized) {
+    if (!initPromise) {
+      initPromise = (async () => {
+        await connectDB();
+        await initSeedData();
+        isInitialized = true;
+      })();
+    }
+    await initPromise;
+  }
+};
+
+// Ensure DB and seed data are ready before any API request
+app.use(async (req, res, next) => {
+  try {
+    await ensureInitialized();
+    next();
+  } catch (err) {
+    console.error('[Init Error]', err);
+    next(err);
+  }
+});
+
 // Health Check
 app.get('/api/health', (req, res) => {
   res.json({
@@ -63,22 +90,18 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
-  // Connect to MongoDB
-  await connectDB();
-  
-  // Populate initial seed data if DB is empty
-  await initSeedData();
+  await ensureInitialized();
 
   app.listen(PORT, () => {
     console.log(`=================================================`);
     console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`✅ MongoDB Connected: localhost`);
-    console.log(`📁 Database: global_acc_marketplace`);
     console.log(`📡 Health Check: http://localhost:${PORT}/api/health`);
     console.log(`=================================================`);
   });
 };
 
-startServer();
+if (!process.env.VERCEL && process.env.NODE_ENV !== 'test') {
+  startServer();
+}
 
 module.exports = app;
